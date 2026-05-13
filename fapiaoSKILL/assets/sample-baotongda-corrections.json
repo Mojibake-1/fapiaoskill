@@ -1,0 +1,37 @@
+{
+  "sheetName": "发票信息",
+  "headerRow": 11,
+  "detailStartRow": 12,
+  "requiredHeaders": [
+    "FBA编号",
+    "Reference ID",
+    "箱数",
+    "海关编码HSCODE",
+    "中文品名",
+    "英文品名",
+    "总数量(PCS)",
+    "单价",
+    "总价值",
+    "材质中英文",
+    "用途中英文"
+  ],
+  "defaults": {
+    "Reference ID": "5QGEYPUS",
+    "箱数": 1,
+    "是否已注册": "无",
+    "规格型号": "无",
+    "是否带电": "否",
+    "是否带磁": "否",
+    "是否是液体": "否",
+    "是否是膏状": "否",
+    "是否粉末": "否"
+  },
+  "formulaRules": [
+    {
+      "target": "总价值",
+      "formulaR1C1": "=RC[-1]*RC[-3]",
+      "onlyWhenBlank": false
+    }
+  ],
+  "rows": []
+}
