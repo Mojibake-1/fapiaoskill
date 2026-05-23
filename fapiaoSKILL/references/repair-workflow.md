@@ -49,24 +49,30 @@ If the user provides a half-finished invoice plus a shipment/product list, the i
 - Product image cells are blank even when the carrier template marks them required.
 - The raw export may retain a carrier upload template shape that is not the final company-facing invoice shape. In that case, use the completed invoice reference to decide final formatting and visible fields.
 - Long Saihu exports can include extra repeated detail rows beyond the selected shipment's actual packing/declaration quantity.
-- The last valid rows can lose borders, row height, wrapping, or other detail-row formatting after a long export or after extra rows are deleted.
+- The last valid rows can lose borders, row height, wrapping, or other detail-row formatting after a long export or after extra rows are deleted. The cutoff row is template-dependent. The first 10 valid detail rows in the current Saihu export are the safe normal style sample unless a completed reference proves a different style.
 
 ## Fixing Rules
 
 - Write corrections only to the invoice copy.
 - Prefer cell updates through header names instead of fixed column letters. Carrier templates move columns.
 - Preserve shipment/box identifiers from the export, but re-source product-detail columns from `发票产品详情.xlsx`.
+- For 海光 (`发票模板`) invoices, `服务*` should be the channel/service text without the carrier name. If the stock-plan or shipment source says `海光普船海卡`, write `普船海卡`. For this 海光 workflow, `报关方式*` should be `报关退税`. Keep this carrier-specific: other logistics templates may require different service names, declaration modes, or field meanings.
+- Follow the carrier template's country-field label. Fields labeled `国家代码`, `二字代码`, `Country Code`, or equivalent should use ISO 3166-1 alpha-2 codes such as `US`; do not leave Chinese country names such as `美国` in those fields. Other templates may ask for the country name or full address text, so verify the header wording before changing country fields.
 - If there is no export, require an explicit current source for shipment/box identifiers before using a carrier template. Never synthesize FBA编号, Reference ID, recipient address, warehouse code, or box-number ranges from carton counts or example files.
 - Before writing row corrections, confirm every non-export product value can be traced to a user-provided current product-detail source. If the trace is missing, leave the field unresolved and ask for the source.
 - Always check and, when available, overwrite these product/detail fields from the online table: `中文品名`, `英文品名`, `总数量(PCS)`, `商品单重(KG)`, `单价`, `总价值`, `品牌`, `是否已注册`, `规格型号`, `材质中英文`, `用途中英文`, `产品图片`, `产品网络链接`, `ASIN`, `海关编码`, `净重`, `毛重`, and dimensions.
+- For any invoice with a detail-row product-brand header such as `产品品牌`, `产品品牌*`, `品牌`, or `Brands 品牌`, derive the final brand from the current shipment's `发货站点`: contains `uc` case-insensitively -> `Ucoolbe`; otherwise -> `MXZONE`. Apply the result as an overwrite across every final detail row.
+- For any invoice with a detail-row brand-type header such as `品牌类型` or `品牌类型*`, force every final detail-row brand-type value to `境外品牌` unless the user explicitly says another approved brand type should be used. Do not leave mixed source values such as `无`, `无品牌`, or `境外品牌(贴牌生产)` in the delivered workbook.
 - Fill blank shared fields from the nearest valid previous line only when it is the same physical box or the same shipment-level field.
 - If the source page/export provides an actual packing/declaration quantity, sum `总数量(PCS)` from the first detail row downward. The row where the cumulative sum equals that source quantity is the valid final detail row. Delete later exported rows.
-- After deleting extra rows, fix any tail-row formatting gaps by copying formats and row height from the nearest normal detail row, without copying values or pictures.
+- Before filling row corrections or copying product pictures, calculate the final detail row count. If the final valid range extends beyond the first 10 valid detail rows, use `autoFormatRows` or an equivalent `formatRows` rule to copy row height, borders, wrapping, number formats, fills, fonts, and alignment from the nearest normal sample row to the later valid rows. Do this before data/image insertion; otherwise pictures may be positioned against the wrong compressed row height.
 - Keep formulas where the carrier template expects formulas. For example, `总价值` should stay a formula when the template calculates it from `单价 * 总数量`.
 - Before recalculating formulas, convert number-like text to real numeric values in math/input columns such as `箱数`, `单箱毛重(KGS)`, `总数量(PCS)`, `商品单重(KG)`, `单价`, and `总价值`. Do not convert identifier/code columns such as FBA number, Reference ID, ASIN, SKU, or HS code unless the template owner explicitly requires those cells as numbers.
+- Before final save and delivery, force customs/HS-code columns such as `海关编码`, `海关编码HSCODE`, `产品海关编码`, and `产品海关编码*` to Excel text format `@`, and rewrite nonblank code values as strings. This prevents values such as 8508700090 from showing as scientific notation after export, copy/paste, or import into another system.
 - If the template says formulas are not allowed, write the calculated number instead of a formula.
 - For image-required columns, do not claim completion unless the image is embedded or the missing image is explicitly reported.
-- Copy actual product pictures from `发票产品详情.xlsx`, normally from the `图片` column. Pictures must be floating shapes placed over the picture cell, not Excel in-cell pictures. Keep every picture inside the target cell borders; shrink oversized pictures to fit and do not enlarge smaller pictures.
+- Copy actual product pictures from `发票产品详情.xlsx`, normally from the `图片` column. Pictures must be floating shapes placed over the picture cell, not Excel in-cell pictures. Prefer exporting the source picture to a temporary bitmap and inserting it with `Shapes.AddPicture`; clipboard paste is only a fallback because WPS/Excel COM can return zero-size pasted pictures. Size every picture from the final target cell or merge-area bounds, keep about 3 pt padding on all sides, default to roughly 90% max cell width and 90% max cell height, preserve source aspect ratio, and allow normal-sized pictures to be enlarged to the fitted box.
+- After all pictures are copied and after any row-height fixes, scan each copied image against actual geometry: exactly one nonzero-size picture per required row, picture center inside the target picture cell, and all four edges inside the target cell bounds. Record `TopLeftCell`/`BottomRightCell` as diagnostics only; they can be misleading for pasted/rotated pictures and must not be the sole overflow test. Do not accept the workbook until geometry passes and a product-image-column preview looks normal when image sizing was part of the task.
 - If the completed reference uses fixed values rather than formulas for totals, write fixed values. If it keeps formulas, preserve formulas and recalculate.
 
 ## Example: 宝通达 Export
@@ -116,9 +122,10 @@ When a completed invoice reference is provided:
 - Do not use the completed reference to fill unit price, product links, product images, HS code, material, purpose, or brand unless the user explicitly says the reference is the current source for the same shipment.
 - Match image behavior:
   - If the reference has images in `产品图片*` or `产品图片`, copy floating pictures into the repaired workbook.
-  - Keep pictures centered inside the cell and sized to fit without stretching or crossing borders.
-  - Shrink oversized pictures only; do not enlarge smaller source pictures.
+  - Keep pictures centered inside the cell safe box and sized to fit without stretching or crossing borders.
+  - Preserve the source aspect ratio; enlarge or shrink to the fitted target box unless a completed reference proves a different sizing convention.
   - Copy one image per detail row unless the template/reference shows a repeated image pattern.
+  - Recheck picture bounds after row formatting, because Excel can leave a pasted picture crossing into adjacent rows even when it looked centered at paste time.
 - For KaiXin-style completed invoices, observed finished rows use:
   - detail header row 27
   - detail rows from row 28
@@ -134,11 +141,15 @@ Return a compact audit with:
 - invoice source path
 - repaired output path
 - final output filename components: 出口方式, 物流服务商, FBA货件号, 件数, 日期
+- carrier-specific top-level fields, especially 海光 `服务*` and `报关方式*`
 - sheet and row range
 - rows changed
 - fields changed
 - quantity-based end row and deleted overrun rows
-- tail-row formatting fixes
+- tail-row formatting fixes, especially whether rows beyond the first 10 valid detail rows copied row height and formats before filling
 - text-number conversions performed
+- customs/HS-code text-format cells formatted
+- country-code fields checked against the carrier template wording, e.g. `收件人国家代码(二字代码)*=US`
 - formula errors before and after
 - missing required fields, especially product images
+- image bounds verification: image count, zero-size pictures, missing rows, duplicate pictures per target row, any picture whose center or edges fall outside the target cell by geometry, and any visual preview concern

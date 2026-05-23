@@ -31,14 +31,15 @@ Completed invoice references are presentation or comparison references. Do not u
 3. Get a completed invoice reference when the user provides one. Treat it as authoritative for finished formatting, row height, column width, image sizing, default values, and whether formulas should remain or be replaced by values.
 4. Identify the carrier template from the workbook structure and/or stock-plan `物流商及渠道`. Read `references/template-map.md` only when the template is unclear.
 5. Inspect the invoice detail header row, current formula errors, and the exported actual packing/declaration quantity. Read `references/repair-workflow.md` for the expected fixes.
-6. Build a correction JSON using the schema in `references/repair-json.md`.
-7. Verify desktop Excel COM:
+6. Before filling corrections, calculate the final invoice detail row count. Treat the first 10 valid detail rows in the current export as the normal style sample unless a completed reference proves otherwise. If more detail rows are needed, copy row height and cell formats from the nearest normal sample row to the later valid rows before filling values and product pictures. Do not hardcode row 35; that boundary depends on the exported template.
+7. Build a correction JSON using the schema in `references/repair-json.md`.
+8. Verify desktop Excel COM:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/check_excel_com.ps1
 ```
 
-8. Apply corrections to a copy of the exported workbook:
+9. Apply corrections to a copy of the exported workbook:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/repair_exported_invoice.ps1 `
@@ -49,10 +50,10 @@ powershell -ExecutionPolicy Bypass -File scripts/repair_exported_invoice.ps1 `
   -FailOnFormulaErrors
 ```
 
-9. Review the script JSON report. If required fields are missing, product images are not copied, or formula errors remain, fix the correction source before finalizing.
-10. Confirm the report's `textNumbersConverted` count. This replaces the manual WPS/Excel action "批量转换为数字" for numeric detail columns before formulas are recalculated.
-11. Record source provenance in the audit summary: which user-provided file supplied the Saihu export, which user-provided file/table supplied `发票产品详情`, and which file was only a completed-format reference.
-12. Name the final repaired workbook with the carrier invoice naming rule below.
+10. Review the script JSON report. If required fields are missing, product images are not copied, or formula errors remain, fix the correction source before finalizing.
+11. Confirm the report's `textNumbersConverted` count. This replaces the manual WPS/Excel action "批量转换为数字" for numeric detail columns before formulas are recalculated.
+12. Record source provenance in the audit summary: which user-provided file supplied the Saihu export, which user-provided file/table supplied `发票产品详情`, and which file was only a completed-format reference.
+13. Name the final repaired workbook with the carrier invoice naming rule below.
 
 ## Non-Negotiable Rules
 
@@ -62,14 +63,19 @@ powershell -ExecutionPolicy Bypass -File scripts/repair_exported_invoice.ps1 `
 - Do not source product facts or images from an unmentioned local workbook, a previous run's corrections JSON, or a completed reference unless the user explicitly identifies that file as the current `发票产品详情` source.
 - Use the completed invoice reference as the authority for presentation: header layout, hidden/visible columns, row heights, column widths, borders, fonts, image placement, and carrier-specific default values.
 - Keep shipment facts from the Saihu export unless the user or online table explicitly corrects them: FBA box number, Reference ID, FBA warehouse, recipient address, box count, and destination.
+- For 海光 (`发票模板`) invoices, fill top-level `服务*` with the channel/service text without the carrier name. For example, when `物流商及渠道` is `海光普船海卡`, write `普船海卡`, not `海光普船海卡` and not a generic channel such as `美西OA卡派含税`. For this 海光 workflow, set `报关方式*` to `报关退税`. Other carrier templates may name and interpret service/declaration fields differently, so inspect the template header and source wording before applying carrier-specific defaults.
+- Follow each carrier template's country field wording. If a field asks for `国家代码`, `二字代码`, or similar ISO two-letter country code, write the two-letter code such as `US`, not the Chinese country name `美国`. If another carrier template explicitly asks for country name or address text, keep the required wording for that template instead of applying this rule blindly.
 - Treat the Saihu-exported product/detail area as unreliable. Product columns such as 中文品名, 英文品名, 总数量, 商品单重, 单价, 总价值, 品牌, 是否已注册, 规格型号, 材质中英文, 用途中英文, 产品图片, 产品网络链接, ASIN, and special flags must be checked against `发票产品详情.xlsx` and overwritten when the online table has a value.
-- Product pictures must be floating pictures positioned inside the picture cell, not Excel's in-cell/embedded-cell picture mode. Pictures must stay inside the cell borders; oversized pictures are shrunk to fit, and smaller pictures are not enlarged.
+- Whenever an invoice template has a detail-row product-brand header such as `产品品牌`, `产品品牌*`, `品牌`, or `Brands 品牌`, set every visible detail-row brand cell from the current shipment's `发货站点`: if `发货站点` contains `uc` case-insensitively, use `Ucoolbe`; otherwise use `MXZONE`. Apply it as an overwrite across the final detail range.
+- Whenever an invoice template has a detail-row brand-type header such as `品牌类型` or `品牌类型*`, set every visible detail-row brand-type cell to `境外品牌` unless the user explicitly provides a different approved value. Apply it as an overwrite across the final detail range, not as a blank-only default, because Saihu exports can contain mixed `无`, `无品牌`, or `境外品牌(贴牌生产)` values.
+- Before saving or returning the final invoice, format customs/HS-code columns such as `海关编码`, `海关编码HSCODE`, `产品海关编码`, and `产品海关编码*` as Excel text format `@`, and write nonblank HS-code values as strings. Do not include these columns in `numericHeaders`; keeping them as text prevents scientific notation and preserves code formatting when copied into other systems.
+- Product pictures must be floating pictures positioned inside the picture cell, not Excel's in-cell/embedded-cell picture mode. Prefer exporting the source picture to a temporary bitmap and inserting it with `Shapes.AddPicture` at calculated coordinates; use clipboard paste only as a fallback. Size each picture from the final target cell or merge-area bounds, keep about 3 pt visible padding on every side, default to roughly 90% max cell width and 90% max cell height, preserve the source aspect ratio, and allow normal-sized pictures to be enlarged to that fitted box. After all pictures are copied, reopen or rescan the workbook and verify by geometry, not only by `TopLeftCell`/`BottomRightCell`: no zero-size pictures, exactly one picture per required row, center point in the target picture cell, and all edges inside the target cell bounds.
 - Do not invent compliance-sensitive fields. If HS code, material, purpose, weight, dimensions, unit price, or product image is missing from both sources, ask for it.
 - Do not infer shipment identifiers or address fields from filenames, product names, cartons, or prior examples. Missing FBA编号, Reference ID, FBA仓库代码, recipient address, city, state/province, postal code, or country are blockers unless the Saihu export or user-provided current source supplies them.
 - Preserve every invoice detail line unless the user confirms rows should be deleted or merged.
 - For repeated lines in the same box, fill missing shared fields such as `Reference ID`, `箱数`, brand/default flags, and total formulas consistently.
 - When the export shows an actual packing/declaration quantity, use it to determine the valid detail range by cumulatively summing `总数量(PCS)`. Delete rows after the row where the cumulative sum equals that quantity; do not keep overrun rows just because Saihu exported them.
-- If the tail valid rows lose borders/row formatting after a long export or row deletion, copy formats from the nearest normal detail row to those tail rows.
+- After the valid detail range is known and before filling product corrections, compare the final detail row count with the first 10 valid detail rows from the current export. Those first 10 rows are the normal style sample by default. If later valid rows exist, copy row height and cell formats from the nearest normal sample row to those later rows before writing values or product pictures. This must happen before image insertion so pictures are sized and centered against the final row height.
 - Convert number-like text in numeric detail columns before recalculating formulas. This is the scripted equivalent of clicking WPS/Excel "批量转换为数字"; do it for quantity, carton count, weight, unit price, and total-value columns, but do not convert identifiers such as FBA number, Reference ID, ASIN, SKU, or HS code unless the carrier explicitly requires numeric HS cells.
 - Treat unresolved formula errors as blockers unless the user explicitly asks for a draft.
 
@@ -131,9 +137,13 @@ Before returning the repaired workbook:
 - Confirm the original export was copied and not overwritten.
 - Confirm item-line count before/after repair.
 - Confirm `总数量(PCS)` across visible detail rows equals the exported actual packing/declaration quantity when that source value is provided.
+- For 海光 invoices, confirm `服务*` and `报关方式*` match the carrier-specific final values, e.g. `服务*=普船海卡` and `报关方式*=报关退税`.
+- Confirm template country-code fields that mention `国家代码` or `二字代码` use ISO two-letter codes such as `US`, while carrier templates that request country names retain the carrier-required wording.
+- Confirm any detail rows beyond the first 10 valid detail rows have the same row height and visible cell formatting as the normal sample rows before accepting the workbook.
 - Confirm all required corrected fields are filled for each visible detail row.
 - Confirm formulas have recalculated and no `#REF!`, `#DIV/0!`, `#VALUE!`, `#NAME?`, or `#N/A` remains.
 - Confirm text-number warnings are cleared for numeric detail columns, or that the script report has a nonzero/expected `textNumbersConverted` value.
+- Confirm customs/HS-code cells are stored with Excel text format `@`, not general or numeric/scientific formatting.
 - Confirm `总价值` equals `单价 * 总数量` where the template uses those fields.
-- Confirm any image requirement is either satisfied, explicitly marked for manual insertion, or disclosed as missing.
+- Confirm any image requirement is either satisfied, explicitly marked for manual insertion, or disclosed as missing. For embedded images, verify one nonzero-size image per visible detail row, verify every image center and edge stays inside its target cell border using actual `Left/Top/Width/Height` geometry, and visually preview the product-image column when the user has reported image overflow or sizing issues.
 - Provide a compact audit summary: source workbook, selected sheet, detail rows repaired, product-detail source with provenance, completed reference if used, unresolved fields, and formula errors.

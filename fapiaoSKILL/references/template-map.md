@@ -51,6 +51,14 @@ When a known-good 宝通达 completed invoice is provided as a strict visual ref
 | 海光 | `assets/templates/haiguang-invoice-template.xls` | `发票模板` | 16-35 | `fbaFulfillmentCenter`, `recipientAddress1`, `recipientCity`, `recipientStateProvince`, `recipientPostalCode`, `recipientCountry`, `boxCount`, `referenceId` | `fbaBoxNo`, `boxWeight`, `boxSizeLength`, `boxSizeWidth`, `boxSizeHeight`, `declareNameCh`, `declareNameEn`, `boxPcs`, `material`, `purpose`, `hsCode`, `brand`, `brandType`, `salesLink` |
 | 阿拉丁 | `assets/templates/aladdin-invoice-template.xlsx` | `Sheet1` | 6-18 | `fbaShipmentId`, `referenceId`, `fbaFulfillmentCenter`, `country` | `declareNameEn`, `declareNameCh`, `material`, `purpose`, `brand`, `boxPcs`, `boxWeight`, `hsCode`, `boxSizeLength`, `boxSizeWidth`, `boxSizeHeight`, `salesLink`, `asin` |
 
+海光 top-level notes: `服务*` should use the service/channel part without the carrier name, e.g. source `海光普船海卡` -> `普船海卡`; `报关方式*` should be `报关退税` for this workflow.
+
+For every carrier where `brandType` maps to a visible detail header such as `品牌类型` or `品牌类型*`, the production default is `境外品牌`, applied as an overwrite across all final detail rows unless the user explicitly provides a different approved value.
+
+For every carrier where `brand` maps to a visible product-brand detail header such as `产品品牌`, `产品品牌*`, `品牌`, or `Brands 品牌`, derive the production value from the current shipment's `发货站点`: contains `uc` case-insensitively -> `Ucoolbe`; otherwise -> `MXZONE`. Apply it as an overwrite across all final detail rows.
+
+Top-level recipient-country fields vary by carrier. When the template header says `国家代码`, `二字代码`, `Country Code`, or equivalent, use ISO two-letter codes such as `US`; when the template asks for a country name or full address, preserve that carrier's required country wording.
+
 ## Placeholder Notes
 
 - Top-level placeholders use `{field}`.

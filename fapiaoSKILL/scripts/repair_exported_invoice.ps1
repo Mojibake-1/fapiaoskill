@@ -97,6 +97,61 @@ function Get-DefaultNumericHeaders() {
     )
 }
 
+function Get-DefaultTextHeaders() {
+    return @(
+        "海关编码HSCODE",
+        "海关编码",
+        "海关编码*",
+        "产品海关编码",
+        "产品海关编码*",
+        "HSCODE",
+        "HS CODE",
+        "HS Code",
+        "HS编码",
+        "HS编码*"
+    )
+}
+
+function Convert-CodeValueToText($Value) {
+    if ($null -eq $Value) { return "" }
+    if ($Value -is [byte] -or $Value -is [int16] -or $Value -is [int32] -or $Value -is [int64] -or
+        $Value -is [single] -or $Value -is [double] -or $Value -is [decimal]) {
+        $number = [double]$Value
+        if ([Math]::Abs($number - [Math]::Round($number)) -lt 0.0000001) {
+            return $number.ToString("0", [System.Globalization.CultureInfo]::InvariantCulture)
+        }
+        return $number.ToString("0.################", [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+    return ([string]$Value).Trim()
+}
+
+function Format-TextColumns($Worksheet, [int]$StartRow, [int]$EndRow, $HeaderMap, $NormalizedHeaderMap, $Headers) {
+    $formatted = 0
+    $seenColumns = @{}
+
+    foreach ($header in (Get-Array $Headers)) {
+        $col = Resolve-HeaderColumn $HeaderMap $NormalizedHeaderMap $header
+        if ($null -eq $col) { continue }
+        if ($seenColumns.ContainsKey([string]$col)) { continue }
+        $seenColumns[[string]$col] = $true
+
+        $range = $Worksheet.Range($Worksheet.Cells.Item($StartRow, $col), $Worksheet.Cells.Item($EndRow, $col))
+        $range.NumberFormat = "@"
+
+        for ($row = $StartRow; $row -le $EndRow; $row++) {
+            $cell = $Worksheet.Cells.Item($row, $col)
+            $cell.NumberFormat = "@"
+            if ([bool]$cell.HasFormula) { continue }
+            if (Is-BlankCell $cell) { continue }
+
+            $cell.Value2 = [string](Convert-CodeValueToText $cell.Value2)
+            $formatted++
+        }
+    }
+
+    return $formatted
+}
+
 function Convert-TextNumbersInColumns($Worksheet, [int]$StartRow, [int]$EndRow, $HeaderMap, $NormalizedHeaderMap, $Headers, $Warnings) {
     $converted = 0
     $seenColumns = @{}
@@ -432,6 +487,66 @@ function Apply-RowFormatRules($Worksheet, $Rules, $Warnings) {
     return $applied
 }
 
+function Apply-ForceValues($Worksheet, [int]$StartRow, [int]$EndRow, $HeaderMap, $NormalizedHeaderMap, $Values, $Warnings) {
+    if ($null -eq $Values) { return 0 }
+
+    $applied = 0
+    foreach ($prop in $Values.PSObject.Properties) {
+        $col = Resolve-HeaderColumn $HeaderMap $NormalizedHeaderMap $prop.Name
+        if ($null -eq $col) {
+            $Warnings.Add("force value header not found: $($prop.Name)") | Out-Null
+            continue
+        }
+
+        for ($row = $StartRow; $row -le $EndRow; $row++) {
+            Set-ExcelCell $Worksheet.Cells.Item($row, $col) $prop.Value
+            $applied++
+        }
+    }
+
+    return $applied
+}
+
+function Apply-AutoDetailFormatRows($Worksheet, [int]$DetailStartRow, [int]$DetailEndRow, $Rule, $Warnings) {
+    $enabled = $true
+    if ($null -ne $Rule) {
+        $enabled = [bool](Get-JsonProp $Rule "enabled" $true)
+    }
+    if (-not $enabled) { return 0 }
+
+    $sampleDetailRows = 10
+    if ($null -ne $Rule) {
+        $sampleDetailRows = [int](Get-JsonProp $Rule "sampleDetailRows" $sampleDetailRows)
+    }
+    if ($sampleDetailRows -lt 1) {
+        $Warnings.Add("autoFormatRows skipped: sampleDetailRows must be at least 1") | Out-Null
+        return 0
+    }
+
+    $detailCount = $DetailEndRow - $DetailStartRow + 1
+    if ($detailCount -le $sampleDetailRows) { return 0 }
+
+    $sourceRow = $DetailStartRow + $sampleDetailRows - 1
+    $targetStartRow = $sourceRow + 1
+    if ($null -ne $Rule) {
+        $sourceRow = [int](Get-JsonProp $Rule "sourceRow" $sourceRow)
+        $targetStartRow = [int](Get-JsonProp $Rule "targetStartRow" $targetStartRow)
+    }
+    if ($sourceRow -lt $DetailStartRow -or $sourceRow -gt $DetailEndRow) {
+        $Warnings.Add("autoFormatRows skipped: sourceRow $sourceRow outside detail range $DetailStartRow-$DetailEndRow") | Out-Null
+        return 0
+    }
+    if ($targetStartRow -lt ($sourceRow + 1)) { $targetStartRow = $sourceRow + 1 }
+    if ($targetStartRow -gt $DetailEndRow) { return 0 }
+
+    $ruleObject = [pscustomobject]@{
+        sourceRow = $sourceRow
+        targetStartRow = $targetStartRow
+        targetEndRow = $DetailEndRow
+    }
+    return Apply-RowFormatRules $Worksheet @($ruleObject) $Warnings
+}
+
 function Find-SourcePicture($SourceWorksheet, [int]$SourceRow, [int]$SourceImageColumn) {
     for ($i = 1; $i -le $SourceWorksheet.Shapes.Count; $i++) {
         $shape = $SourceWorksheet.Shapes.Item($i)
@@ -445,31 +560,207 @@ function Find-SourcePicture($SourceWorksheet, [int]$SourceRow, [int]$SourceImage
     return $null
 }
 
-function Copy-PictureToCell($SourceShape, $TargetWorksheet, [int]$TargetRow, [int]$TargetColumn) {
-    $targetCell = $TargetWorksheet.Cells.Item($TargetRow, $TargetColumn)
-    $SourceShape.Copy() | Out-Null
-    $TargetWorksheet.Paste($targetCell) | Out-Null
-    $pasted = $TargetWorksheet.Shapes.Item($TargetWorksheet.Shapes.Count)
-
-    $margin = 2
-    $maxWidth = [Math]::Max(1, [double]$targetCell.Width - ($margin * 2))
-    $maxHeight = [Math]::Max(1, [double]$targetCell.Height - ($margin * 2))
-    $pasted.LockAspectRatio = -1
-
-    # Fit to the largest aspect-ratio-preserving size inside the target cell.
-    $originalWidth = [Math]::Max(1, [double]$pasted.Width)
-    $originalHeight = [Math]::Max(1, [double]$pasted.Height)
-    if (($maxWidth / $originalWidth) -lt ($maxHeight / $originalHeight)) {
-        $pasted.Width = $maxWidth
-    } else {
-        $pasted.Height = $maxHeight
+function Remove-ShapesFromCell($Worksheet, [int]$Row, [int]$Column) {
+    $removed = 0
+    $targetCell = $Worksheet.Cells.Item($Row, $Column)
+    $cellLeft = [double]$targetCell.Left
+    $cellTop = [double]$targetCell.Top
+    $cellRight = $cellLeft + [double]$targetCell.Width
+    $cellBottom = $cellTop + [double]$targetCell.Height
+    for ($i = $Worksheet.Shapes.Count; $i -ge 1; $i--) {
+        $shape = $Worksheet.Shapes.Item($i)
+        $topLeftMatch = $false
+        try {
+            $topLeftMatch = ([int]$shape.TopLeftCell.Row -eq $Row -and [int]$shape.TopLeftCell.Column -eq $Column)
+        } catch {
+            $topLeftMatch = $false
+        }
+        $centerX = [double]$shape.Left + ([double]$shape.Width / 2)
+        $centerY = [double]$shape.Top + ([double]$shape.Height / 2)
+        $centerMatch = ($centerX -ge $cellLeft -and $centerX -le $cellRight -and $centerY -ge $cellTop -and $centerY -le $cellBottom)
+        if ($topLeftMatch -or $centerMatch) {
+            $shape.Delete()
+            $removed++
+        }
     }
-    if ([double]$pasted.Width -gt $maxWidth) { $pasted.Width = $maxWidth }
-    if ([double]$pasted.Height -gt $maxHeight) { $pasted.Height = $maxHeight }
+    return $removed
+}
 
-    $pasted.Left = [double]$targetCell.Left + $margin + (($maxWidth - [double]$pasted.Width) / 2)
-    $pasted.Top = [double]$targetCell.Top + $margin + (($maxHeight - [double]$pasted.Height) / 2)
-    $pasted.Placement = 2 # xlMove: floating picture, not an in-cell picture
+function Get-ImageSizing($Corrections) {
+    $rule = Get-JsonProp $Corrections "imageSizing"
+    [pscustomobject]@{
+        margin = [double](Get-JsonProp $rule "margin" 3)
+        maxWidthRatio = [double](Get-JsonProp $rule "maxWidthRatio" 0.90)
+        maxHeightRatio = [double](Get-JsonProp $rule "maxHeightRatio" 0.90)
+    }
+}
+
+function Get-TargetPictureArea($TargetWorksheet, [int]$TargetRow, [int]$TargetColumn) {
+    $targetCell = $TargetWorksheet.Cells.Item($TargetRow, $TargetColumn)
+    $area = $targetCell
+    try {
+        if ([bool]$targetCell.MergeCells) { $area = $targetCell.MergeArea }
+    } catch {
+        $area = $targetCell
+    }
+    return [pscustomobject]@{
+        left = [double]$area.Left
+        top = [double]$area.Top
+        width = [double]$area.Width
+        height = [double]$area.Height
+    }
+}
+
+function Get-FitPictureRect($TargetWorksheet, [int]$TargetRow, [int]$TargetColumn, [double]$SourceWidth, [double]$SourceHeight, $Sizing) {
+    $area = Get-TargetPictureArea $TargetWorksheet $TargetRow $TargetColumn
+    $margin = [Math]::Max(0, [double]$Sizing.margin)
+    $maxWidthRatio = [Math]::Max(0.1, [double]$Sizing.maxWidthRatio)
+    $maxHeightRatio = [Math]::Max(0.1, [double]$Sizing.maxHeightRatio)
+    $maxWidth = [Math]::Max(1, [Math]::Min($area.width - ($margin * 2), $area.width * $maxWidthRatio))
+    $maxHeight = [Math]::Max(1, [Math]::Min($area.height - ($margin * 2), $area.height * $maxHeightRatio))
+    $aspect = [Math]::Max(0.01, [double]$SourceWidth / [Math]::Max(1, [double]$SourceHeight))
+
+    $width = $maxWidth
+    $height = $width / $aspect
+    if ($height -gt $maxHeight) {
+        $height = $maxHeight
+        $width = $height * $aspect
+    }
+
+    return [pscustomobject]@{
+        left = $area.left + (($area.width - $width) / 2)
+        top = $area.top + (($area.height - $height) / 2)
+        width = $width
+        height = $height
+        area = $area
+        margin = $margin
+        maxWidth = $maxWidth
+        maxHeight = $maxHeight
+    }
+}
+
+function Verify-PictureInsideCell($Shape, $TargetWorksheet, [int]$TargetRow, [int]$TargetColumn, $Sizing) {
+    if ($null -eq $Shape) { return $false }
+    $area = Get-TargetPictureArea $TargetWorksheet $TargetRow $TargetColumn
+    $margin = [Math]::Max(0, [double]$Sizing.margin)
+    $maxWidth = [Math]::Max(1, [Math]::Min($area.width - ($margin * 2), $area.width * [double]$Sizing.maxWidthRatio))
+    $maxHeight = [Math]::Max(1, [Math]::Min($area.height - ($margin * 2), $area.height * [double]$Sizing.maxHeightRatio))
+    $left = [double]$Shape.Left
+    $top = [double]$Shape.Top
+    $width = [double]$Shape.Width
+    $height = [double]$Shape.Height
+    if ($width -le 1 -or $height -le 1) { return $false }
+    $right = $left + $width
+    $bottom = $top + $height
+    return ($left -ge ($area.left + $margin - 0.75) -and
+        $top -ge ($area.top + $margin - 0.75) -and
+        $right -le ($area.left + $area.width - $margin + 0.75) -and
+        $bottom -le ($area.top + $area.height - $margin + 0.75) -and
+        $width -le ($maxWidth + 0.75) -and
+        $height -le ($maxHeight + 0.75))
+}
+
+function Fit-PictureInsideCell($Shape, $TargetWorksheet, [int]$TargetRow, [int]$TargetColumn, $Sizing, [double]$SourceWidth = 0, [double]$SourceHeight = 0) {
+    if ($SourceWidth -le 1) { $SourceWidth = [Math]::Max(1, [double]$Shape.Width) }
+    if ($SourceHeight -le 1) { $SourceHeight = [Math]::Max(1, [double]$Shape.Height) }
+    $rect = Get-FitPictureRect $TargetWorksheet $TargetRow $TargetColumn $SourceWidth $SourceHeight $Sizing
+    try { $Shape.LockAspectRatio = 0 } catch {}
+    $Shape.Left = [single]$rect.left
+    $Shape.Top = [single]$rect.top
+    $Shape.Width = [single]$rect.width
+    $Shape.Height = [single]$rect.height
+    try { $Shape.LockAspectRatio = -1 } catch {}
+    $Shape.Placement = 1 # xlMoveAndSize: floating picture that follows row/column changes.
+    return Verify-PictureInsideCell $Shape $TargetWorksheet $TargetRow $TargetColumn $Sizing
+}
+
+function Export-ShapeToTempPng($Excel, $Shape, [string]$TempDir) {
+    if (-not (Test-Path -LiteralPath $TempDir)) {
+        New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+    }
+    $png = Join-Path $TempDir ("image_{0}.png" -f ([guid]::NewGuid().ToString("N")))
+    $tmpWorkbook = $null
+    try {
+        $tmpWorkbook = $Excel.Workbooks.Add()
+        $tmpWorksheet = $tmpWorkbook.Worksheets.Item(1)
+        $chartObject = $tmpWorksheet.ChartObjects().Add(1, 1, [Math]::Max(30, [double]$Shape.Width), [Math]::Max(30, [double]$Shape.Height))
+        $Shape.CopyPicture(1, 2) | Out-Null
+        Start-Sleep -Milliseconds 150
+        $chartObject.Chart.Paste() | Out-Null
+        $exported = $chartObject.Chart.Export($png, "PNG", $false)
+        if ((-not $exported) -and (-not (Test-Path -LiteralPath $png))) {
+            throw "Chart.Export returned false and no file was created"
+        }
+        if (-not (Test-Path -LiteralPath $png)) {
+            throw "Chart.Export did not create $png"
+        }
+        if ((Get-Item -LiteralPath $png).Length -le 0) {
+            throw "Chart.Export created an empty file"
+        }
+        return $png
+    } finally {
+        if ($null -ne $tmpWorkbook) {
+            $tmpWorkbook.Close($false) | Out-Null
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($tmpWorkbook)
+        }
+    }
+}
+
+function Add-PictureFileToCell([string]$PicturePath, $SourceShape, $TargetWorksheet, [int]$TargetRow, [int]$TargetColumn, $Sizing) {
+    $sourceWidth = [Math]::Max(1, [double]$SourceShape.Width)
+    $sourceHeight = [Math]::Max(1, [double]$SourceShape.Height)
+    $rect = Get-FitPictureRect $TargetWorksheet $TargetRow $TargetColumn $sourceWidth $sourceHeight $Sizing
+    $picture = $TargetWorksheet.Shapes.AddPicture($PicturePath, 0, -1, [single]$rect.left, [single]$rect.top, [single]$rect.width, [single]$rect.height)
+    try { $picture.LockAspectRatio = -1 } catch {}
+    $picture.Placement = 1
+    if (-not (Verify-PictureInsideCell $picture $TargetWorksheet $TargetRow $TargetColumn $Sizing)) {
+        Fit-PictureInsideCell $picture $TargetWorksheet $TargetRow $TargetColumn $Sizing $sourceWidth $sourceHeight | Out-Null
+    }
+    return $picture
+}
+
+function Copy-PictureToCell($SourceShape, $TargetWorksheet, [int]$TargetRow, [int]$TargetColumn, $Excel, [string]$TempImageDir, $Sizing, $ImageFileCache) {
+    $targetCell = $TargetWorksheet.Cells.Item($TargetRow, $TargetColumn)
+    Remove-ShapesFromCell $TargetWorksheet $TargetRow $TargetColumn | Out-Null
+    $cacheKey = $SourceShape.Name
+    try {
+        if (-not $ImageFileCache.ContainsKey($cacheKey)) {
+            $ImageFileCache[$cacheKey] = Export-ShapeToTempPng $Excel $SourceShape $TempImageDir
+        }
+        $picture = Add-PictureFileToCell $ImageFileCache[$cacheKey] $SourceShape $TargetWorksheet $TargetRow $TargetColumn $Sizing
+        if (Verify-PictureInsideCell $picture $TargetWorksheet $TargetRow $TargetColumn $Sizing) {
+            return $picture
+        }
+        $picture.Delete()
+    } catch {
+        Remove-ShapesFromCell $TargetWorksheet $TargetRow $TargetColumn | Out-Null
+    }
+
+    $SourceShape.Copy() | Out-Null
+    Start-Sleep -Milliseconds 100
+    $TargetWorksheet.Paste($targetCell) | Out-Null
+    $fallbackPicture = $TargetWorksheet.Shapes.Item($TargetWorksheet.Shapes.Count)
+    if (-not (Fit-PictureInsideCell $fallbackPicture $TargetWorksheet $TargetRow $TargetColumn $Sizing ([double]$SourceShape.Width) ([double]$SourceShape.Height))) {
+        throw "image placement failed at row $TargetRow, column $TargetColumn"
+    }
+    return $fallbackPicture
+}
+
+function Ensure-PictureRecordsInsideCells($PictureRecords, $Warnings, $Sizing) {
+    $adjusted = 0
+    foreach ($record in (Get-Array $PictureRecords)) {
+        if ($null -eq $record -or $null -eq $record.shape) { continue }
+        $inside = Verify-PictureInsideCell $record.shape $record.worksheet ([int]$record.row) ([int]$record.column) $Sizing
+        if (-not $inside) {
+            $inside = Fit-PictureInsideCell $record.shape $record.worksheet ([int]$record.row) ([int]$record.column) $Sizing ([double]$record.sourceWidth) ([double]$record.sourceHeight)
+        }
+        if ($inside) {
+            $adjusted++
+        } else {
+            $Warnings.Add("image still outside target cell or safe box at row $($record.row), column $($record.column)") | Out-Null
+        }
+    }
+    return $adjusted
 }
 
 $invoiceFull = (Resolve-Path -LiteralPath $InvoicePath).Path
@@ -486,6 +777,9 @@ if ($outputDir -and -not (Test-Path -LiteralPath $outputDir)) {
 }
 
 $corrections = Get-Content -Raw -Encoding UTF8 -LiteralPath $correctionsFull | ConvertFrom-Json
+$imageSizing = Get-ImageSizing $corrections
+$tempImageDir = Join-Path $outputDir (".image-cache-" + [IO.Path]::GetFileNameWithoutExtension($outputFull))
+$imageFileCache = @{}
 Copy-Item -LiteralPath $invoiceFull -Destination $outputFull -Force
 
 $excel = $null
@@ -506,11 +800,14 @@ $report = [ordered]@{
     rowsDeleted = 0
     referenceFormatsApplied = $false
     defaultsApplied = 0
+    forceValuesApplied = 0
     rowCorrectionsApplied = 0
     rowFormatsApplied = 0
     formulaCellsWritten = 0
     textNumbersConverted = 0
+    textCodeCellsFormatted = 0
     imagesCopied = 0
+    imageBoundsAdjusted = 0
     warnings = @()
     missingRequired = @()
     formulaErrorsBefore = @()
@@ -603,6 +900,15 @@ try {
 
     $report.formulaErrorsBefore = @(Scan-FormulaErrors $worksheet)
 
+    $formatWarnings = New-Object System.Collections.Generic.List[string]
+    $explicitFormatRows = Get-JsonProp $corrections "formatRows"
+    if ($null -ne $explicitFormatRows) {
+        $report.rowFormatsApplied = Apply-RowFormatRules $worksheet $explicitFormatRows $formatWarnings
+    } else {
+        $report.rowFormatsApplied = Apply-AutoDetailFormatRows $worksheet $detailStartRow $detailEndRow (Get-JsonProp $corrections "autoFormatRows") $formatWarnings
+    }
+    foreach ($warning in $formatWarnings) { $report.warnings += $warning }
+
     $defaults = Get-JsonProp $corrections "defaults"
     if ($null -ne $defaults) {
         foreach ($row in $detailStartRow..$detailEndRow) {
@@ -646,6 +952,7 @@ try {
         }
     }
 
+    $copiedPictureRecords = @()
     foreach ($rowCorrection in (Get-Array (Get-JsonProp $corrections "rows"))) {
         $targetRow = Get-JsonProp $rowCorrection "row"
         if ($null -eq $targetRow) {
@@ -685,7 +992,15 @@ try {
             if ($copyImage -and $null -ne $sourceRow) {
                 $sourceShape = Find-SourcePicture $imageWorksheet ([int]$imageSourceRow) ([int]$sourceImageColumn)
                 if ($null -ne $sourceShape) {
-                    Copy-PictureToCell $sourceShape $worksheet $targetRow ([int]$targetImageColumn)
+                    $pastedPicture = Copy-PictureToCell $sourceShape $worksheet $targetRow ([int]$targetImageColumn) $excel $tempImageDir $imageSizing $imageFileCache
+                    $copiedPictureRecords += [pscustomobject]@{
+                        shape = $pastedPicture
+                        worksheet = $worksheet
+                        row = $targetRow
+                        column = [int]$targetImageColumn
+                        sourceWidth = [double]$sourceShape.Width
+                        sourceHeight = [double]$sourceShape.Height
+                    }
                     $report.imagesCopied++
                 } else {
                     $report.warnings += "source image not found at row $imageSourceRow"
@@ -694,9 +1009,13 @@ try {
         }
     }
 
-    $formatWarnings = New-Object System.Collections.Generic.List[string]
-    $report.rowFormatsApplied = Apply-RowFormatRules $worksheet (Get-JsonProp $corrections "formatRows") $formatWarnings
-    foreach ($warning in $formatWarnings) { $report.warnings += $warning }
+    $imageBoundsWarnings = New-Object System.Collections.Generic.List[string]
+    $report.imageBoundsAdjusted = Ensure-PictureRecordsInsideCells $copiedPictureRecords $imageBoundsWarnings $imageSizing
+    foreach ($warning in $imageBoundsWarnings) { $report.warnings += $warning }
+
+    $forceValueWarnings = New-Object System.Collections.Generic.List[string]
+    $report.forceValuesApplied = Apply-ForceValues $worksheet $detailStartRow $detailEndRow $headerMap $normalizedHeaderMap (Get-JsonProp $corrections "forceValues") $forceValueWarnings
+    foreach ($warning in $forceValueWarnings) { $report.warnings += $warning }
 
     $numericHeaders = Get-JsonProp $corrections "numericHeaders" (Get-DefaultNumericHeaders)
     $report.textNumbersConverted = Convert-TextNumbersInColumns $worksheet $detailStartRow $detailEndRow $headerMap $normalizedHeaderMap $numericHeaders $report.warnings
@@ -718,6 +1037,9 @@ try {
             $report.formulaCellsWritten++
         }
     }
+
+    $textHeaders = Get-JsonProp $corrections "textHeaders" (Get-DefaultTextHeaders)
+    $report.textCodeCellsFormatted = Format-TextColumns $worksheet $detailStartRow $detailEndRow $headerMap $normalizedHeaderMap $textHeaders
 
     $excel.CalculateFull()
     $report.missingRequired = @(Scan-MissingRequired $worksheet $detailStartRow $detailEndRow $headerMap $normalizedHeaderMap $requiredHeaders)
@@ -749,6 +1071,9 @@ try {
 $report | ConvertTo-Json -Depth 8
 
 if ($Strict -and $report.missingRequired.Count -gt 0) {
+    exit 1
+}
+if ($Strict -and @($report.warnings | Where-Object { $_ -match "image|picture|source image" }).Count -gt 0) {
     exit 1
 }
 if ($FailOnFormulaErrors -and $report.formulaErrorsAfter.Count -gt 0) {
