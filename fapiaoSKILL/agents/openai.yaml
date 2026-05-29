@@ -1,4 +1,4 @@
 interface:
   display_name: "AMZ Invoice Repair"
   short_description: "Repair AMZ invoices; block incomplete inputs"
-  default_prompt: "Use $amz-invoice-template to repair a Saihu AMZ/FBA carrier invoice; require the current Saihu export, fetch the default 发票产品详情 source yourself from Tencent Docs MCP (file_id DY0hGbmd2Q1ZTVFVD, sheet_id BB08J2), and when the task uses the AMZ备货计划及出货安排表 work-scope sheet (file token DRE1ZTlhoZVZBVkdL, sheet_id 000001), ask for exact rows/range if the user did not specify the part to do clearly."
+  default_prompt: "Use $amz-invoice-template to repair a Saihu AMZ/FBA carrier invoice; require the current Saihu export, fetch the default 发票产品详情 source yourself from Tencent Docs MCP (file_id DY0hGbmd2Q1ZTVFVD, sheet_id BB08J2), use check_tencent_docs_mcp.ps1 before asking for online sheets after MCP failures, and when the task uses the AMZ备货计划及出货安排表 work-scope sheet (file token DRE1ZTlhoZVZBVkdL, sheet_id 000001), ask for exact rows/range if the user did not specify the part to do clearly."

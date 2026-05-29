@@ -25,6 +25,20 @@ Only use a bundled carrier template to create an invoice from scratch when the u
 
 Completed invoice references are presentation or comparison references. Do not use a completed reference as current shipment data unless the user explicitly says it is the same shipment and should be treated as the source.
 
+## Tencent Docs MCP Dependency
+
+This skill includes its own Tencent Docs MCP runbook at `references/tencent-docs-mcp.md`. Use it when a colleague runs the skill, when MCP authorization is unclear, or when any Tencent Docs command fails.
+
+On the current shared Windows environment, colleagues may reuse the already configured `tencent-docs` MCP authorization under the current Windows user. Do not copy, print, or commit the underlying token or `Authorization` header. If the skill is run under another Windows account or another machine, the owner must authorize that local environment with `mcporter auth tencent-docs` or the official Tencent Docs manual token flow.
+
+Before asking the user to resend online sheets, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/check_tencent_docs_mcp.ps1
+```
+
+Use `--server tencent-docs --tool "..."` for all Tencent Docs calls because dotted tool selectors can be parsed incorrectly by some `mcporter` versions.
+
 ## Default Product-Detail Source
 
 When the user asks for an invoice repair and does not provide a separate `发票产品详情` source, use this Tencent Docs source:
@@ -168,6 +182,7 @@ Rules:
 - Repair workflow and completed-reference handling: `references/repair-workflow.md`
 - Completed invoice reference notes: `references/completed-reference.md`
 - Correction JSON format: `references/repair-json.md`
+- Tencent Docs MCP authorization and command runbook: `references/tencent-docs-mcp.md`
 - Online product table schema: `references/input-schema.md`
 - Work-scope planning sheet schema: `references/work-scope-schema.md`
 - SOP summary: `references/sop-summary.md`

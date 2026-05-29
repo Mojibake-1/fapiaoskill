@@ -2,6 +2,7 @@
 outputs/
 customs-declaration-template/
 node_modules/
+config/
 *.log
 *.tmp
 ~$*
