@@ -41,6 +41,10 @@ Use `--server` and `--tool`; do not call dotted tool names as `tencent-docs.shee
 mcporter call --server tencent-docs --tool "manage.query_file_info" file_id=DY0hGbmd2Q1ZTVFVD --output json
 mcporter call --server tencent-docs --tool "sheet.get_sheet_info" file_id=DY0hGbmd2Q1ZTVFVD --output json
 mcporter call --server tencent-docs --tool "sheet.get_cell_data" file_id=DY0hGbmd2Q1ZTVFVD sheet_id=BB08J2 start_row=0 start_col=0 return_csv=true --output json
+
+mcporter call --server tencent-docs --tool "manage.query_file_info" file_id=DRE1ZTlhoZVZBVkdL --output json
+mcporter call --server tencent-docs --tool "sheet.get_sheet_info" file_id=DRE1ZTlhoZVZBVkdL --output json
+mcporter call --server tencent-docs --tool "sheet.get_cell_data" file_id=DRE1ZTlhoZVZBVkdL sheet_id=000001 start_row=0 start_col=0 return_csv=true --output json
 ```
 
 ## Local Exports And Cache

@@ -48,21 +48,13 @@ When the user asks for an invoice repair and does not provide a separate `发票
 - `sheet_id` / tab: `BB08J2`
 - expected title: `发票产品明细`
 
-Use the Tencent Docs MCP directly. Because its tool names contain dots, prefer the `--server` and `--tool` form:
-
-```powershell
-mcporter call --server tencent-docs --tool "manage.query_file_info" file_id=DY0hGbmd2Q1ZTVFVD --output json
-mcporter call --server tencent-docs --tool "sheet.get_sheet_info" file_id=DY0hGbmd2Q1ZTVFVD --output json
-mcporter call --server tencent-docs --tool "sheet.get_cell_data" file_id=DY0hGbmd2Q1ZTVFVD sheet_id=BB08J2 start_row=0 start_col=0 return_csv=true --output json
-```
-
-For product images, export the online sheet to a local `.xlsx` first, then pass that workbook as `imageSource.workbookPath` in the repair JSON. Use the helper script when possible:
+For exact MCP commands, authorization checks, and troubleshooting, read `references/tencent-docs-mcp.md`. For product images, export the online sheet to a local `.xlsx` first, then pass that workbook as `imageSource.workbookPath` in the repair JSON. Use the helper script when possible:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/fetch_product_detail_from_tencent_docs.ps1
 ```
 
-The helper script writes a sidecar metadata file next to the local workbook. On later runs it compares Tencent Docs `last_modify_time`, `file_id`, `sheet_id`, and sheet row/column counts with that metadata, and also verifies the local workbook SHA-256 hash has not changed; when all checks match, it returns `skippedDownload=true` and reuses the local workbook instead of downloading the same online document again. Use `-Force` only when you intentionally need a fresh export despite no detected difference.
+The helper script writes a sidecar metadata file and skips repeat downloads when Tencent Docs metadata and the local workbook SHA-256 still match. Use `-Force` only when you intentionally need a fresh export despite no detected difference.
 
 If Tencent Docs MCP authorization is missing, the export fails, the target sheet ID changes, or the online export lacks required images, then ask the user for either Tencent Docs access/auth repair or a current exported `发票产品详情.xlsx`. Do not fall back to an old local product-detail workbook.
 
@@ -79,21 +71,13 @@ When the user says the invoice details to make are in the planning sheet, use th
 
 Use this source only to identify the user-requested part and shipment planning fields such as product name, SKU, operator, site, PCS/CTN, carton count, total quantity, dates, destination warehouse, FBA shipment ID, carrier/channel, declaration method, total cartons, inbound number, notes, packing status, and shipping status. It does not replace the Saihu export for official invoice workbook structure, FBA box-number sequences, Reference IDs, address fields, or per-box allocation, and it does not replace `发票产品详情` for product facts or images.
 
-Use Tencent Docs MCP directly:
-
-```powershell
-mcporter call --server tencent-docs --tool "manage.query_file_info" file_id=DRE1ZTlhoZVZBVkdL --output json
-mcporter call --server tencent-docs --tool "sheet.get_sheet_info" file_id=DRE1ZTlhoZVZBVkdL --output json
-mcporter call --server tencent-docs --tool "sheet.get_cell_data" file_id=DRE1ZTlhoZVZBVkdL sheet_id=000001 start_row=0 start_col=0 return_csv=true --output json
-```
-
-If a local `.xlsx` copy is useful, use the helper wrapper:
+For exact MCP commands, authorization checks, and troubleshooting, read `references/tencent-docs-mcp.md`. If a local `.xlsx` copy is useful, use the helper wrapper:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/fetch_invoice_work_scope_from_tencent_docs.ps1
 ```
 
-The helper uses the same metadata and SHA-256 cache rule as the product-detail export helper: if the online document and local workbook have no detected difference, it returns `skippedDownload=true` and does not download again.
+The helper uses the same metadata and SHA-256 cache rule as the product-detail export helper.
 
 The user must specify the part to do each time, for example by row number/range, FBA shipment ID, carrier/channel plus exact product rows, product/SKU list, or another unambiguous selection. If the user only says "做发票", "做这里的", "最新的", "今天的", "这部分", "上面这些", or provides any scope that can map to multiple rows/blocks, ask which rows or range to use. Do not silently process the whole sheet, all visible rows, the latest rows, or the first matching carrier.
 
