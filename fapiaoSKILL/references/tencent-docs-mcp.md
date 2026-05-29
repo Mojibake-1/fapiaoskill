@@ -1,4 +1,4 @@
-# Tencent Docs MCP Integration
+# Tencent Docs MCP Agent Notes
 
 This skill depends on Tencent Docs MCP for two online sources:
 
@@ -9,21 +9,21 @@ This skill depends on Tencent Docs MCP for two online sources:
 
 ## Authorization Model
 
-The local machine already has a `tencent-docs` MCP server configured through `mcporter` under the current Windows user. Colleagues using this same machine and Windows profile may reuse that local authorization directly.
+Treat Tencent Docs MCP as an internal runtime dependency. The agent should use the locally configured `tencent-docs` server when it exists, including any existing authorization available to the current runtime.
 
 Do not store Tencent Docs tokens, Authorization headers, cookies, or copied `mcporter.json` contents inside this repository, skill zip, chat output, or invoice workbooks. The skill should only document commands and checks.
 
-If a colleague runs this skill under a different Windows user or on another machine, the authorization does not automatically follow them. In that case, the owner should authorize that local environment with:
+If authorization is missing, first surface the minimal blocker: local Tencent Docs MCP is not authorized for the current runtime. If the user asks the agent to fix authorization, use:
 
 ```powershell
 mcporter auth tencent-docs
 ```
 
-If OAuth is unavailable, follow the official Tencent Docs skill's manual token flow locally. Keep the token in the user's local `mcporter` configuration or environment only.
+If OAuth is unavailable, use the official Tencent Docs skill's manual token flow locally. Keep the token only in local `mcporter` configuration or environment. Do not ask the user to resend the online sheets until local MCP authorization has been checked and found unavailable.
 
 ## Health Check
 
-Run this before invoice work when a colleague is using the skill for the first time, after Windows user changes, or after any Tencent Docs failure:
+Run this after any Tencent Docs failure, after runtime environment changes, or before falling back to user-supplied exports:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/check_tencent_docs_mcp.ps1
@@ -62,10 +62,10 @@ Use `-Force` only when a fresh export is intentionally required.
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Agent action |
 | --- | --- |
 | `mcporter` not found | Install or expose `mcporter` in PATH for the current Windows user. |
-| `Authorization required` / token error | Run `mcporter auth tencent-docs` in the current user profile. |
+| `Authorization required` / token error | Run `mcporter auth tencent-docs` in the current runtime environment. |
 | `工具: "sheet" 没有注册` or `工具: "manage" 没有注册` | Use `mcporter call --server tencent-docs --tool "sheet.get_sheet_info" ...` rather than a dotted selector. |
 | Expected sheet ID missing | Re-check the Tencent Docs file URL/tab and update `SKILL.md` plus the related helper defaults before running invoice generation. |
 | Export succeeds but data looks stale | Run the helper with `-Force`, then re-run the health check. |

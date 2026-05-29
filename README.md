@@ -11,9 +11,3 @@ Skill entrypoint:
 Internal Codex skill name:
 
 - `amz-invoice-template`
-
-Tencent Docs MCP:
-
-- Run `powershell -ExecutionPolicy Bypass -File fapiaoSKILL/scripts/check_tencent_docs_mcp.ps1` before first use on a colleague workstation/profile.
-- The shared Windows user can reuse the locally configured `tencent-docs` authorization.
-- Do not commit or share Tencent Docs tokens; see `fapiaoSKILL/references/tencent-docs-mcp.md`.

@@ -27,11 +27,11 @@ Completed invoice references are presentation or comparison references. Do not u
 
 ## Tencent Docs MCP Dependency
 
-This skill includes its own Tencent Docs MCP runbook at `references/tencent-docs-mcp.md`. Use it when a colleague runs the skill, when MCP authorization is unclear, or when any Tencent Docs command fails.
+This skill treats Tencent Docs MCP as an internal data dependency, not as an external setup workflow. Use `references/tencent-docs-mcp.md` when MCP authorization is unclear, when any Tencent Docs command fails, or when changing the online source IDs.
 
-On the current shared Windows environment, colleagues may reuse the already configured `tencent-docs` MCP authorization under the current Windows user. Do not copy, print, or commit the underlying token or `Authorization` header. If the skill is run under another Windows account or another machine, the owner must authorize that local environment with `mcporter auth tencent-docs` or the official Tencent Docs manual token flow.
+Use the local `tencent-docs` MCP configuration already available to the current runtime. Do not copy, print, or commit the underlying token or `Authorization` header. If local authorization is missing, report the MCP authorization blocker directly; do not turn it into broad setup instructions and do not ask for spreadsheet exports until the health check has failed.
 
-Before asking the user to resend online sheets, run:
+Before asking the user to resend online sheets, run the health check yourself:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/check_tencent_docs_mcp.ps1
