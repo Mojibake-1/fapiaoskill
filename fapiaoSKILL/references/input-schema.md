@@ -1,6 +1,35 @@
 # Online Product Detail Schema
 
-The second source for invoice repair is the online `发票产品详情` table. Prefer an exported `.xlsx`/`.csv` version of the table. Screenshots can only support visible rows and visible columns.
+The second source for invoice repair is the online `发票产品详情` table. By default, pull the latest table from Tencent Docs through MCP instead of asking the user to provide a file. Prefer an exported `.xlsx` version when product images must be copied. Screenshots can only support visible rows and visible columns.
+
+## Default Tencent Docs Source
+
+Use this source unless the user explicitly provides a different current product-detail source:
+
+| Field | Value |
+| --- | --- |
+| URL | `https://docs.qq.com/sheet/DY0hGbmd2Q1ZTVFVD?tab=BB08J2` |
+| `file_id` | `DY0hGbmd2Q1ZTVFVD` |
+| `sheet_id` / tab | `BB08J2` |
+| expected title | `发票产品明细` |
+
+Use Tencent Docs MCP commands in this form because the tool names contain dots:
+
+```powershell
+mcporter call --server tencent-docs --tool "manage.query_file_info" file_id=DY0hGbmd2Q1ZTVFVD --output json
+mcporter call --server tencent-docs --tool "sheet.get_sheet_info" file_id=DY0hGbmd2Q1ZTVFVD --output json
+mcporter call --server tencent-docs --tool "sheet.get_cell_data" file_id=DY0hGbmd2Q1ZTVFVD sheet_id=BB08J2 start_row=0 start_col=0 return_csv=true --output json
+```
+
+For image-copy workflows, export the sheet and download the `.xlsx`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/fetch_product_detail_from_tencent_docs.ps1
+```
+
+The script stores a metadata sidecar beside the downloaded workbook. If the online `last_modify_time`, `file_id`, `sheet_id`, and sheet row/column counts still match the local metadata and the local workbook SHA-256 still matches the metadata, the script skips the export/download and returns `skippedDownload=true`. Use `-Force` to refresh deliberately.
+
+The downloaded workbook path should be used as `imageSource.workbookPath`. If the export fails or lacks embedded images, ask for Tencent Docs access repair or a current exported workbook; do not use an old local copy.
 
 ## Observed Table Shape
 
@@ -75,7 +104,7 @@ If multiple online rows can match one invoice row, show the candidates and ask t
 
 ## Image Handling
 
-In the observed `发票产品详情.xlsx`, product images are embedded Excel picture shapes anchored to the `图片` column, usually column `T`. The workbook may not load cleanly with openpyxl because of online/WPS style records, so use Excel COM or direct package parsing for image work.
+In the observed Tencent Docs export, product images are embedded Excel picture shapes anchored to the `图片` column, usually column `T`. The workbook may not load cleanly with openpyxl because of online/WPS style records, so use Excel COM or direct package parsing for image work.
 
 For each matched online row, keep the source worksheet row number. The repair script can copy the picture shape by using:
 

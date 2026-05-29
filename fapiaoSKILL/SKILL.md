@@ -14,9 +14,9 @@ Do not create, repair, export, or "draft" an invoice workbook until the current 
 The normal required source set is:
 
 - the current unrepaired Saihu export workbook, usually `报关资料YYYYMMDD-*.xlsx`
-- the current online `发票产品详情` source, preferably an `.xlsx` export so product images can be copied
+- the current online `发票产品详情` source. By default this is the pinned Tencent Docs sheet `https://docs.qq.com/sheet/DY0hGbmd2Q1ZTVFVD?tab=BB08J2`; fetch it yourself through the Tencent Docs MCP instead of asking the user to provide it. Prefer an `.xlsx` export when product images must be copied.
 
-`Current source` means a path, attachment, export, screenshot, or copied table explicitly provided by the user for this task. Do not silently search `Downloads`, `.analysis`, prior outputs, old screenshots, or generic files such as `发票产品详情.xlsx`. If a plausible local candidate exists but the user did not name it, ask the user to confirm that exact file before using it.
+For the product-detail source, the pinned Tencent Docs sheet counts as the current source unless the user explicitly provides a different current `发票产品详情` link, workbook, screenshot, or copied table for this task. For all other files, `Current source` means a path, attachment, export, screenshot, or copied table explicitly provided by the user for this task. Do not silently search `Downloads`, `.analysis`, prior outputs, old screenshots, or generic files such as `发票产品详情.xlsx`. If a plausible local candidate exists but the user did not name it, ask the user to confirm that exact file before using it.
 
 A pasted shipment/product list by itself is not enough, even if it includes carrier, country, cartons, PCS/CTN, total quantity, and dates. For a carrier invoice it normally lacks FBA box numbers, Reference ID, warehouse/address fields, per-box allocation, HS code, declared names, unit price, dimensions, weight, material, purpose, product links, and product images.
 
@@ -24,10 +24,37 @@ Only use a bundled carrier template to create an invoice from scratch when the u
 
 Completed invoice references are presentation or comparison references. Do not use a completed reference as current shipment data unless the user explicitly says it is the same shipment and should be treated as the source.
 
+## Default Product-Detail Source
+
+When the user asks for an invoice repair and does not provide a separate `发票产品详情` source, use this Tencent Docs source:
+
+- URL: `https://docs.qq.com/sheet/DY0hGbmd2Q1ZTVFVD?aidPos=detail&no_promotion=1&is_blank_or_template=blank&tab=BB08J2&u=4eb605868b504f9a88efe9a066309f91`
+- `file_id`: `DY0hGbmd2Q1ZTVFVD`
+- `sheet_id` / tab: `BB08J2`
+- expected title: `发票产品明细`
+
+Use the Tencent Docs MCP directly. Because its tool names contain dots, prefer the `--server` and `--tool` form:
+
+```powershell
+mcporter call --server tencent-docs --tool "manage.query_file_info" file_id=DY0hGbmd2Q1ZTVFVD --output json
+mcporter call --server tencent-docs --tool "sheet.get_sheet_info" file_id=DY0hGbmd2Q1ZTVFVD --output json
+mcporter call --server tencent-docs --tool "sheet.get_cell_data" file_id=DY0hGbmd2Q1ZTVFVD sheet_id=BB08J2 start_row=0 start_col=0 return_csv=true --output json
+```
+
+For product images, export the online sheet to a local `.xlsx` first, then pass that workbook as `imageSource.workbookPath` in the repair JSON. Use the helper script when possible:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/fetch_product_detail_from_tencent_docs.ps1
+```
+
+The helper script writes a sidecar metadata file next to the local workbook. On later runs it compares Tencent Docs `last_modify_time`, `file_id`, `sheet_id`, and sheet row/column counts with that metadata, and also verifies the local workbook SHA-256 hash has not changed; when all checks match, it returns `skippedDownload=true` and reuses the local workbook instead of downloading the same online document again. Use `-Force` only when you intentionally need a fresh export despite no detected difference.
+
+If Tencent Docs MCP authorization is missing, the export fails, the target sheet ID changes, or the online export lacks required images, then ask the user for either Tencent Docs access/auth repair or a current exported `发票产品详情.xlsx`. Do not fall back to an old local product-detail workbook.
+
 ## Required Workflow
 
 1. Get the current unrepaired Saihu export workbook. This is usually named like `报关资料YYYYMMDD-*.xlsx`.
-2. Get the current online `发票产品详情` source or an export/screenshot of it. Prefer an `.xlsx` export because product images must be copied from the workbook.
+2. Get the current online `发票产品详情` source. Default to the pinned Tencent Docs sheet above and fetch it through MCP; only ask the user for a product-detail file when MCP/export access is blocked or the user says to use a different current source. Prefer an `.xlsx` export because product images must be copied from the workbook.
 3. Get a completed invoice reference when the user provides one. Treat it as authoritative for finished formatting, row height, column width, image sizing, default values, and whether formulas should remain or be replaced by values.
 4. Identify the carrier template from the workbook structure and/or stock-plan `物流商及渠道`. Read `references/template-map.md` only when the template is unclear.
 5. Inspect the invoice detail header row, current formula errors, and the exported actual packing/declaration quantity. Read `references/repair-workflow.md` for the expected fixes.
@@ -52,15 +79,15 @@ powershell -ExecutionPolicy Bypass -File scripts/repair_exported_invoice.ps1 `
 
 10. Review the script JSON report. If required fields are missing, product images are not copied, or formula errors remain, fix the correction source before finalizing.
 11. Confirm the report's `textNumbersConverted` count. This replaces the manual WPS/Excel action "批量转换为数字" for numeric detail columns before formulas are recalculated.
-12. Record source provenance in the audit summary: which user-provided file supplied the Saihu export, which user-provided file/table supplied `发票产品详情`, and which file was only a completed-format reference.
+12. Record source provenance in the audit summary: which user-provided file supplied the Saihu export, which Tencent Docs `file_id`/`sheet_id` or user-provided file/table supplied `发票产品详情`, the export time/path when applicable, and which file was only a completed-format reference.
 13. Name the final repaired workbook with the carrier invoice naming rule below.
 
 ## Non-Negotiable Rules
 
 - Never modify the original Saihu export, original carrier templates, or SOP workbook. Always write a new repaired workbook.
 - Use Excel COM for final repair and save. Do not save official `.xls`/`.xlsx` carrier invoices with `openpyxl`, `pandas`, `xlsxwriter`, or generic spreadsheet exporters.
-- Use the current user-provided online product-detail table as the authority for product facts: unit price, declared value, net/gross weight, dimensions, material CN/EN, purpose CN/EN, HS code, product image, product code/name, sales link, SKU, and ASIN.
-- Do not source product facts or images from an unmentioned local workbook, a previous run's corrections JSON, or a completed reference unless the user explicitly identifies that file as the current `发票产品详情` source.
+- Use the current online product-detail table as the authority for product facts: unit price, declared value, net/gross weight, dimensions, material CN/EN, purpose CN/EN, HS code, product image, product code/name, sales link, SKU, and ASIN. By default, fetch this table from Tencent Docs `file_id=DY0hGbmd2Q1ZTVFVD`, `sheet_id=BB08J2`.
+- Do not source product facts or images from an unmentioned local workbook, a previous run's corrections JSON, or a completed reference unless the user explicitly identifies that file as the current `发票产品详情` source. The pinned Tencent Docs sheet is the only standing default.
 - Use the completed invoice reference as the authority for presentation: header layout, hidden/visible columns, row heights, column widths, borders, fonts, image placement, and carrier-specific default values.
 - Keep shipment facts from the Saihu export unless the user or online table explicitly corrects them: FBA box number, Reference ID, FBA warehouse, recipient address, box count, and destination.
 - For 海光 (`发票模板`) invoices, fill top-level `服务*` with the channel/service text without the carrier name. For example, when `物流商及渠道` is `海光普船海卡`, write `普船海卡`, not `海光普船海卡` and not a generic channel such as `美西OA卡派含税`. For this 海光 workflow, set `报关方式*` to `报关退税`. Other carrier templates may name and interpret service/declaration fields differently, so inspect the template header and source wording before applying carrier-specific defaults.
@@ -119,14 +146,13 @@ Rules:
 If the user says only "帮我做发票" or "修一下这个发票", ask only for missing current-task inputs:
 
 - the unrepaired Saihu export workbook
-- the online `发票产品详情` export, link, screenshot, or copied table
 - any logistics/channel confirmation only if the exported workbook does not identify the carrier clearly
 
-Do not ask for original template paths unless the exported workbook is corrupt or the bundled reference template is stale.
+Do not ask for the `发票产品详情` document by default; fetch the pinned Tencent Docs sheet through MCP. Do not ask for original template paths unless the exported workbook is corrupt or the bundled reference template is stale.
 
 If the user provides only a product/shipment table, first classify it. Rows shaped like `仓库/产品名/SKU/负责人/国家或渠道/PCS per CTN/箱数/总数量/日期` are stock-plan or shipment-planning data, not a complete invoice source. Reply with the missing inputs instead of generating a workbook. For example, say that 宝通达 invoice generation still needs the Saihu export or, if creating from template, the FBA box-number sequence, Reference ID per shipment, warehouse/address fields, and `发票产品详情` product facts.
 
-If the user provides a half-finished invoice plus a product/shipment list but no current `发票产品详情` source, inspect the workbook and report what can be fixed from the invoice itself. Do not fill missing unit price, brand, product links, product images, HS/material/purpose corrections, or other product facts from unrelated local files. Ask for the current product-detail source before producing a finished repaired workbook.
+If the user provides a half-finished invoice plus a product/shipment list but no separate `发票产品详情` source, fetch the pinned Tencent Docs sheet through MCP and use it as the product-detail source. If MCP/export is unavailable, inspect the workbook and report what can be fixed from the invoice itself. Do not fill missing unit price, brand, product links, product images, HS/material/purpose corrections, or other product facts from unrelated local files. Ask for Tencent Docs access repair or a current product-detail export before producing a finished repaired workbook.
 
 If the user later provides a known-good completed invoice for comparison, treat it as a reference unless they explicitly say it is the current data source. Use it to report differences and to improve formatting rules; do not retroactively treat it as proof that earlier unprovided product data was authorized.
 

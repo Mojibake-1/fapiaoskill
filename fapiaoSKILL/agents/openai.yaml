@@ -1,4 +1,4 @@
 interface:
   display_name: "AMZ Invoice Repair"
   short_description: "Repair AMZ invoices; block incomplete inputs"
-  default_prompt: "Use $amz-invoice-template to repair a Saihu AMZ/FBA carrier invoice; use only current user-provided sources, and if the Saihu export or product-detail source is missing, stop and ask for those inputs."
+  default_prompt: "Use $amz-invoice-template to repair a Saihu AMZ/FBA carrier invoice; require the current Saihu export, but fetch the default 发票产品详情 source yourself from Tencent Docs MCP (file_id DY0hGbmd2Q1ZTVFVD, sheet_id BB08J2) unless the user provides a different current source."

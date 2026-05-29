@@ -6,8 +6,11 @@ Use this JSON file with `scripts/repair_exported_invoice.ps1`.
 {
   "sourceProvenance": {
     "invoiceWorkbookUserProvided": true,
-    "productDetailUserProvided": true,
-    "productDetailWorkbookPath": "C:\\path\\to\\发票产品详情.xlsx",
+    "productDetailSource": "tencent-docs",
+    "productDetailFileId": "DY0hGbmd2Q1ZTVFVD",
+    "productDetailSheetId": "BB08J2",
+    "productDetailWorkbookPath": "C:\\path\\to\\product-detail-latest.xlsx",
+    "productDetailMetadataPath": "C:\\path\\to\\product-detail-latest.metadata.json",
     "completedReferenceUserProvided": true,
     "completedReferenceRole": "format-reference-only"
   },
@@ -132,15 +135,18 @@ Before running `repair_exported_invoice.ps1` for a production repair, include `s
 {
   "sourceProvenance": {
     "invoiceWorkbookUserProvided": true,
-    "productDetailUserProvided": true,
-    "productDetailWorkbookPath": "C:\\Users\\admin\\Downloads\\发票产品详情.xlsx",
+    "productDetailSource": "tencent-docs",
+    "productDetailFileId": "DY0hGbmd2Q1ZTVFVD",
+    "productDetailSheetId": "BB08J2",
+    "productDetailWorkbookPath": "C:\\path\\to\\product-detail-latest.xlsx",
+    "productDetailMetadataPath": "C:\\path\\to\\product-detail-latest.metadata.json",
     "completedReferenceUserProvided": false,
     "completedReferenceRole": "none"
   }
 }
 ```
 
-If row corrections contain product facts that are not already reliable in the Saihu export, `productDetailUserProvided` must be `true`. A generic local file found in `Downloads`, a prior `.analysis` file, or a completed invoice reference does not satisfy this gate unless the user explicitly names or confirms it for the current task. If the gate is not satisfied, stop and ask for the current `发票产品详情` source instead of generating a finished workbook.
+If row corrections contain product facts that are not already reliable in the Saihu export, `productDetailSource` must be either `tencent-docs` for the pinned online sheet or `user-provided` for an explicitly supplied current replacement. A generic local file found in `Downloads`, a stale `.analysis` file, a previous corrections JSON, or a completed invoice reference does not satisfy this gate. For the Tencent Docs default, prefer the helper script output and metadata; if it returns `skippedDownload=true`, the existing local workbook is acceptable because its metadata matches the current online document. If the gate is not satisfied, stop and ask for Tencent Docs access repair or a current `发票产品详情` replacement instead of generating a finished workbook.
 
 ## Row Corrections
 
