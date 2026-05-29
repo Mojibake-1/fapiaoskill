@@ -6,6 +6,10 @@ Use this JSON file with `scripts/repair_exported_invoice.ps1`.
 {
   "sourceProvenance": {
     "invoiceWorkbookUserProvided": true,
+    "workScopeSource": "tencent-docs",
+    "workScopeFileId": "DRE1ZTlhoZVZBVkdL",
+    "workScopeSheetId": "000001",
+    "workScopeSelection": "备货详情 rows 4-8, specified by user",
     "productDetailSource": "tencent-docs",
     "productDetailFileId": "DY0hGbmd2Q1ZTVFVD",
     "productDetailSheetId": "BB08J2",
@@ -109,7 +113,7 @@ Use this JSON file with `scripts/repair_exported_invoice.ps1`.
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `sourceProvenance` | required for production repairs | Auditable source gate. Use it to record whether the invoice workbook, product-detail source, and completed reference were explicitly provided or confirmed by the user for the current task |
+| `sourceProvenance` | required for production repairs | Auditable source gate. Use it to record whether the invoice workbook, work-scope selection, product-detail source, and completed reference were explicitly provided, confirmed, or fetched for the current task |
 | `sheetName` | optional | Invoice sheet name. If omitted, the first worksheet is used |
 | `headerRow` | optional | Row containing detail headers. If omitted, the script tries to find it |
 | `detailStartRow` | optional | First detail row. Defaults to `headerRow + 1` |
@@ -135,6 +139,12 @@ Before running `repair_exported_invoice.ps1` for a production repair, include `s
 {
   "sourceProvenance": {
     "invoiceWorkbookUserProvided": true,
+    "workScopeSource": "tencent-docs",
+    "workScopeFileId": "DRE1ZTlhoZVZBVkdL",
+    "workScopeSheetId": "000001",
+    "workScopeSelection": "备货详情 rows 4-8, specified by user",
+    "workScopeWorkbookPath": "C:\\path\\to\\invoice-work-scope-latest.xlsx",
+    "workScopeMetadataPath": "C:\\path\\to\\invoice-work-scope-latest.metadata.json",
     "productDetailSource": "tencent-docs",
     "productDetailFileId": "DY0hGbmd2Q1ZTVFVD",
     "productDetailSheetId": "BB08J2",
@@ -147,6 +157,8 @@ Before running `repair_exported_invoice.ps1` for a production repair, include `s
 ```
 
 If row corrections contain product facts that are not already reliable in the Saihu export, `productDetailSource` must be either `tencent-docs` for the pinned online sheet or `user-provided` for an explicitly supplied current replacement. A generic local file found in `Downloads`, a stale `.analysis` file, a previous corrections JSON, or a completed invoice reference does not satisfy this gate. For the Tencent Docs default, prefer the helper script output and metadata; if it returns `skippedDownload=true`, the existing local workbook is acceptable because its metadata matches the current online document. If the gate is not satisfied, stop and ask for Tencent Docs access repair or a current `发票产品详情` replacement instead of generating a finished workbook.
+
+When the task uses the `AMZ备货计划及出货安排表` planning sheet, `workScopeSelection` must record the exact user-specified rows/range/IDs. If the user's selection is missing or ambiguous, ask before producing the correction JSON; do not use the whole planning sheet or a guessed latest block.
 
 ## Row Corrections
 

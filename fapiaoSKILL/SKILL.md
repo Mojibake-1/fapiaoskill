@@ -15,6 +15,7 @@ The normal required source set is:
 
 - the current unrepaired Saihu export workbook, usually `报关资料YYYYMMDD-*.xlsx`
 - the current online `发票产品详情` source. By default this is the pinned Tencent Docs sheet `https://docs.qq.com/sheet/DY0hGbmd2Q1ZTVFVD?tab=BB08J2`; fetch it yourself through the Tencent Docs MCP instead of asking the user to provide it. Prefer an `.xlsx` export when product images must be copied.
+- when the task requires choosing which shipment/invoice lines to process from the planning sheet, a clear user-specified work scope from the default `AMZ备货计划及出货安排表` source below. If the user does not specify the part to do, or the scope is vague, ask before selecting rows.
 
 For the product-detail source, the pinned Tencent Docs sheet counts as the current source unless the user explicitly provides a different current `发票产品详情` link, workbook, screenshot, or copied table for this task. For all other files, `Current source` means a path, attachment, export, screenshot, or copied table explicitly provided by the user for this task. Do not silently search `Downloads`, `.analysis`, prior outputs, old screenshots, or generic files such as `发票产品详情.xlsx`. If a plausible local candidate exists but the user did not name it, ask the user to confirm that exact file before using it.
 
@@ -51,22 +52,54 @@ The helper script writes a sidecar metadata file next to the local workbook. On 
 
 If Tencent Docs MCP authorization is missing, the export fails, the target sheet ID changes, or the online export lacks required images, then ask the user for either Tencent Docs access/auth repair or a current exported `发票产品详情.xlsx`. Do not fall back to an old local product-detail workbook.
 
+## Default Work-Scope Source
+
+When the user says the invoice details to make are in the planning sheet, use this Tencent Docs source to locate the requested shipment rows:
+
+- URL: `https://docs.qq.com/sheet/DRE1ZTlhoZVZBVkdL?u=2433b3ce0ab54f1e8b74acb4b0e2c643&tab=000001`
+- URL file token: `DRE1ZTlhoZVZBVkdL`
+- `sheet_id` / tab: `000001`
+- expected title: `AMZ备货计划及出货安排表`
+- expected sheet name: `备货详情`
+- observed header row: row 3, with data starting at row 4
+
+Use this source only to identify the user-requested part and shipment planning fields such as product name, SKU, operator, site, PCS/CTN, carton count, total quantity, dates, destination warehouse, FBA shipment ID, carrier/channel, declaration method, total cartons, inbound number, notes, packing status, and shipping status. It does not replace the Saihu export for official invoice workbook structure, FBA box-number sequences, Reference IDs, address fields, or per-box allocation, and it does not replace `发票产品详情` for product facts or images.
+
+Use Tencent Docs MCP directly:
+
+```powershell
+mcporter call --server tencent-docs --tool "manage.query_file_info" file_id=DRE1ZTlhoZVZBVkdL --output json
+mcporter call --server tencent-docs --tool "sheet.get_sheet_info" file_id=DRE1ZTlhoZVZBVkdL --output json
+mcporter call --server tencent-docs --tool "sheet.get_cell_data" file_id=DRE1ZTlhoZVZBVkdL sheet_id=000001 start_row=0 start_col=0 return_csv=true --output json
+```
+
+If a local `.xlsx` copy is useful, use the helper wrapper:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/fetch_invoice_work_scope_from_tencent_docs.ps1
+```
+
+The helper uses the same metadata and SHA-256 cache rule as the product-detail export helper: if the online document and local workbook have no detected difference, it returns `skippedDownload=true` and does not download again.
+
+The user must specify the part to do each time, for example by row number/range, FBA shipment ID, carrier/channel plus exact product rows, product/SKU list, or another unambiguous selection. If the user only says "做发票", "做这里的", "最新的", "今天的", "这部分", "上面这些", or provides any scope that can map to multiple rows/blocks, ask which rows or range to use. Do not silently process the whole sheet, all visible rows, the latest rows, or the first matching carrier.
+
 ## Required Workflow
 
 1. Get the current unrepaired Saihu export workbook. This is usually named like `报关资料YYYYMMDD-*.xlsx`.
-2. Get the current online `发票产品详情` source. Default to the pinned Tencent Docs sheet above and fetch it through MCP; only ask the user for a product-detail file when MCP/export access is blocked or the user says to use a different current source. Prefer an `.xlsx` export because product images must be copied from the workbook.
-3. Get a completed invoice reference when the user provides one. Treat it as authoritative for finished formatting, row height, column width, image sizing, default values, and whether formulas should remain or be replaced by values.
-4. Identify the carrier template from the workbook structure and/or stock-plan `物流商及渠道`. Read `references/template-map.md` only when the template is unclear.
-5. Inspect the invoice detail header row, current formula errors, and the exported actual packing/declaration quantity. Read `references/repair-workflow.md` for the expected fixes.
-6. Before filling corrections, calculate the final invoice detail row count. Treat the first 10 valid detail rows in the current export as the normal style sample unless a completed reference proves otherwise. If more detail rows are needed, copy row height and cell formats from the nearest normal sample row to the later valid rows before filling values and product pictures. Do not hardcode row 35; that boundary depends on the exported template.
-7. Build a correction JSON using the schema in `references/repair-json.md`.
-8. Verify desktop Excel COM:
+2. If the task refers to the planning sheet or does not otherwise make the shipment scope obvious, get the user-specified rows/range from the default work-scope source. If the requested part is missing or vague, ask before doing any workbook generation.
+3. Get the current online `发票产品详情` source. Default to the pinned Tencent Docs sheet above and fetch it through MCP; only ask the user for a product-detail file when MCP/export access is blocked or the user says to use a different current source. Prefer an `.xlsx` export because product images must be copied from the workbook.
+4. Get a completed invoice reference when the user provides one. Treat it as authoritative for finished formatting, row height, column width, image sizing, default values, and whether formulas should remain or be replaced by values.
+5. Identify the carrier template from the workbook structure and/or stock-plan `物流商及渠道`. Read `references/template-map.md` only when the template is unclear.
+6. Inspect the invoice detail header row, current formula errors, and the exported actual packing/declaration quantity. Read `references/repair-workflow.md` for the expected fixes.
+7. Before filling corrections, calculate the final invoice detail row count. Treat the first 10 valid detail rows in the current export as the normal style sample unless a completed reference proves otherwise. If more detail rows are needed, copy row height and cell formats from the nearest normal sample row to the later valid rows before filling values and product pictures. Do not hardcode row 35; that boundary depends on the exported template.
+8. Build a correction JSON using the schema in `references/repair-json.md`.
+9. Verify desktop Excel COM:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/check_excel_com.ps1
 ```
 
-9. Apply corrections to a copy of the exported workbook:
+10. Apply corrections to a copy of the exported workbook:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/repair_exported_invoice.ps1 `
@@ -77,14 +110,15 @@ powershell -ExecutionPolicy Bypass -File scripts/repair_exported_invoice.ps1 `
   -FailOnFormulaErrors
 ```
 
-10. Review the script JSON report. If required fields are missing, product images are not copied, or formula errors remain, fix the correction source before finalizing.
-11. Confirm the report's `textNumbersConverted` count. This replaces the manual WPS/Excel action "批量转换为数字" for numeric detail columns before formulas are recalculated.
-12. Record source provenance in the audit summary: which user-provided file supplied the Saihu export, which Tencent Docs `file_id`/`sheet_id` or user-provided file/table supplied `发票产品详情`, the export time/path when applicable, and which file was only a completed-format reference.
-13. Name the final repaired workbook with the carrier invoice naming rule below.
+11. Review the script JSON report. If required fields are missing, product images are not copied, or formula errors remain, fix the correction source before finalizing.
+12. Confirm the report's `textNumbersConverted` count. This replaces the manual WPS/Excel action "批量转换为数字" for numeric detail columns before formulas are recalculated.
+13. Record source provenance in the audit summary: which user-provided file supplied the Saihu export, which user-specified work-scope rows/range were used from `AMZ备货计划及出货安排表`, which Tencent Docs `file_id`/`sheet_id` or user-provided file/table supplied `发票产品详情`, the export time/path when applicable, and which file was only a completed-format reference.
+14. Name the final repaired workbook with the carrier invoice naming rule below.
 
 ## Non-Negotiable Rules
 
 - Never modify the original Saihu export, original carrier templates, or SOP workbook. Always write a new repaired workbook.
+- Never infer the requested invoice scope from the planning sheet. If the user has not specified exact rows/range/IDs, ask before selecting rows.
 - Use Excel COM for final repair and save. Do not save official `.xls`/`.xlsx` carrier invoices with `openpyxl`, `pandas`, `xlsxwriter`, or generic spreadsheet exporters.
 - Use the current online product-detail table as the authority for product facts: unit price, declared value, net/gross weight, dimensions, material CN/EN, purpose CN/EN, HS code, product image, product code/name, sales link, SKU, and ASIN. By default, fetch this table from Tencent Docs `file_id=DY0hGbmd2Q1ZTVFVD`, `sheet_id=BB08J2`.
 - Do not source product facts or images from an unmentioned local workbook, a previous run's corrections JSON, or a completed reference unless the user explicitly identifies that file as the current `发票产品详情` source. The pinned Tencent Docs sheet is the only standing default.
@@ -135,6 +169,7 @@ Rules:
 - Completed invoice reference notes: `references/completed-reference.md`
 - Correction JSON format: `references/repair-json.md`
 - Online product table schema: `references/input-schema.md`
+- Work-scope planning sheet schema: `references/work-scope-schema.md`
 - SOP summary: `references/sop-summary.md`
 - Template selection and row map: `references/template-map.md`
 - Carrier templates: `assets/templates/`
@@ -146,6 +181,7 @@ Rules:
 If the user says only "帮我做发票" or "修一下这个发票", ask only for missing current-task inputs:
 
 - the unrepaired Saihu export workbook
+- the exact rows/range or unambiguous shipment selection from the default `AMZ备货计划及出货安排表` work-scope sheet, when the task depends on that sheet
 - any logistics/channel confirmation only if the exported workbook does not identify the carrier clearly
 
 Do not ask for the `发票产品详情` document by default; fetch the pinned Tencent Docs sheet through MCP. Do not ask for original template paths unless the exported workbook is corrupt or the bundled reference template is stale.
@@ -172,4 +208,4 @@ Before returning the repaired workbook:
 - Confirm customs/HS-code cells are stored with Excel text format `@`, not general or numeric/scientific formatting.
 - Confirm `总价值` equals `单价 * 总数量` where the template uses those fields.
 - Confirm any image requirement is either satisfied, explicitly marked for manual insertion, or disclosed as missing. For embedded images, verify one nonzero-size image per visible detail row, verify every image center and edge stays inside its target cell border using actual `Left/Top/Width/Height` geometry, and visually preview the product-image column when the user has reported image overflow or sizing issues.
-- Provide a compact audit summary: source workbook, selected sheet, detail rows repaired, product-detail source with provenance, completed reference if used, unresolved fields, and formula errors.
+- Provide a compact audit summary: source workbook, selected sheet, user-requested work-scope rows/range when used, detail rows repaired, product-detail source with provenance, completed reference if used, unresolved fields, and formula errors.
